@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")   // Supabase Transaction mode (pgBouncer)
+  directUrl = env("DIRECT_URL")     // prisma migrate dev 용 direct 연결
 }
 
 /// Hipparcos 별 카탈로그 (초기 1회 적재, 이후 읽기 전용)
