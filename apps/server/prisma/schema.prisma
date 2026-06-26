@@ -1,0 +1,32 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Hipparcos 별 카탈로그 (초기 1회 적재, 이후 읽기 전용)
+model Star {
+  /// Hipparcos 카탈로그 고유번호 — 자연키를 PK로 사용
+  hipId     Int     @id @map("hip_id")
+
+  /// 적경 Right Ascension (도, 0 ~ 360)
+  ra        Float
+
+  /// 적위 Declination (도, -90 ~ 90)
+  dec       Float
+
+  /// 겉보기 등급 (낮을수록 밝음)
+  magnitude Float
+
+  /// 고유 명칭 (없으면 null)
+  name      String? @map("proper_name")
+
+  @@index([magnitude])
+  @@map("stars")
+}
