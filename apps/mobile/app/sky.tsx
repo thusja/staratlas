@@ -12,11 +12,13 @@ import * as THREE from 'three';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { useObserverStore } from '../store/observerStore';
 import { useRenderedStarStore } from '../store/renderedStarStore';
+import { magnitudeToSize, magnitudeToOpacity } from '../lib/astro';
 
 const SPHERE_RADIUS = 100;
 
 export default function SkyViewScreen() {
   const [isViewDrifted, setIsViewDrifted] = useState(false);
+  const [compassLabel, setCompassLabel] = useState('↑ 북');
 
   const lat = useObserverStore((s) => s.lat);
   const lng = useObserverStore((s) => s.lng);
@@ -58,39 +60,43 @@ export default function SkyViewScreen() {
     camera.position.set(0, 0, 0);
     cameraRef.current = camera;
 
-    // 별 Points 생성
+    // 별 Points — 등급별 3그룹으로 분리 (per-star 크기 적용)
     if (renderedStars.length > 0) {
-      const positions = new Float32Array(renderedStars.length * 3);
-      const colors = new Float32Array(renderedStars.length * 3);
-      const sizes = new Float32Array(renderedStars.length);
+      const groups = [
+        { stars: renderedStars.filter((s) => s.magnitude < 1),                      size: magnitudeToSize(0),   opacity: magnitudeToOpacity(0) },
+        { stars: renderedStars.filter((s) => s.magnitude >= 1 && s.magnitude < 3),  size: magnitudeToSize(2),   opacity: magnitudeToOpacity(2) },
+        { stars: renderedStars.filter((s) => s.magnitude >= 3),                     size: magnitudeToSize(4),   opacity: magnitudeToOpacity(4) },
+      ];
 
-      renderedStars.forEach((star, i) => {
-        positions[i * 3] = star.x;
-        positions[i * 3 + 1] = star.y;
-        positions[i * 3 + 2] = star.z;
+      for (const { stars: group, size, opacity } of groups) {
+        if (group.length === 0) continue;
+        const positions = new Float32Array(group.length * 3);
+        const colors = new Float32Array(group.length * 3);
 
-        // 등급에 따른 밝기
-        const brightness = star.magnitude < 1 ? 1.0 : star.magnitude < 3 ? 0.8 : 0.55;
-        colors[i * 3] = 0.75 * brightness + 0.1;     // R
-        colors[i * 3 + 1] = 0.85 * brightness + 0.1; // G
-        colors[i * 3 + 2] = 1.0 * brightness;         // B
+        group.forEach((star, i) => {
+          positions[i * 3]     = star.x;
+          positions[i * 3 + 1] = star.y;
+          positions[i * 3 + 2] = star.z;
+          // 등급에 따른 색상 — 밝은 별은 더 희게
+          const b = opacity;
+          colors[i * 3]     = 0.75 * b + 0.25;
+          colors[i * 3 + 1] = 0.85 * b + 0.15;
+          colors[i * 3 + 2] = 1.0 * b;
+        });
 
-        sizes[i] = star.magnitude < 1 ? 4 : star.magnitude < 3 ? 2.5 : 1.5;
-      });
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
 
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-      const material = new THREE.PointsMaterial({
-        vertexColors: true,
-        size: 2,
-        sizeAttenuation: false,
-        transparent: true,
-        opacity: 0.9,
-      });
-
-      scene.add(new THREE.Points(geometry, material));
+        const mat = new THREE.PointsMaterial({
+          vertexColors: true,
+          size,
+          sizeAttenuation: false,
+          transparent: true,
+          opacity,
+        });
+        scene.add(new THREE.Points(geo, mat));
+      }
     }
 
     // 지평선 링
@@ -124,23 +130,36 @@ export default function SkyViewScreen() {
     setIsViewDrifted(false);
   };
 
+  // 방위각(rad) → 방향 레이블 계산
+  const azimuthToCompass = (az: number): string => {
+    // azimuth 0 = 북, 증가 방향은 동쪽
+    const deg = ((az * 180) / Math.PI + 360) % 360;
+    if (deg < 22.5 || deg >= 337.5) return '↑ 북';
+    if (deg < 67.5)  return '↑ 북동';
+    if (deg < 112.5) return '→ 동';
+    if (deg < 157.5) return '↓ 남동';
+    if (deg < 202.5) return '↓ 남';
+    if (deg < 247.5) return '↓ 남서';
+    if (deg < 292.5) return '← 서';
+    return '↑ 북서';
+  };
+
   // 드래그 제스처
   const panGesture = Gesture.Pan()
     .onUpdate((e) => {
-      rotationRef.current = {
-        azimuth: initialRotRef.current.azimuth - e.translationX * 0.005,
-        altitude: Math.max(
-          -Math.PI / 2,
-          Math.min(
-            Math.PI / 2,
-            initialRotRef.current.altitude + e.translationY * 0.003
-          )
-        ),
-      };
+      const newAz = initialRotRef.current.azimuth - e.translationX * 0.005;
+      const newAlt = Math.max(
+        -Math.PI / 2,
+        Math.min(Math.PI / 2, initialRotRef.current.altitude + e.translationY * 0.003)
+      );
+      rotationRef.current = { azimuth: newAz, altitude: newAlt };
+
+      // 15° = 0.2618 rad 벗어나면 버튼 표시
       const drifted =
-        Math.abs(rotationRef.current.azimuth) > 0.3 ||
-        Math.abs(rotationRef.current.altitude - 0.5) > 0.3;
+        Math.abs(newAz % (2 * Math.PI)) > 0.2618 ||
+        Math.abs(newAlt - 0.5) > 0.2618;
       setIsViewDrifted(drifted);
+      setCompassLabel(azimuthToCompass(newAz));
     })
     .onEnd(() => {
       initialRotRef.current = { ...rotationRef.current };
@@ -182,7 +201,7 @@ export default function SkyViewScreen() {
 
       {/* 방위 힌트 */}
       <View style={styles.compass} pointerEvents="none">
-        <Text style={styles.compassText}>↑ 북</Text>
+        <Text style={styles.compassText}>{compassLabel}</Text>
       </View>
 
       {/* 현재 하늘로 돌아오기 버튼 */}

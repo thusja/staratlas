@@ -51,6 +51,7 @@ export default function LoadingScreen() {
     try {
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
+        timeInterval: 5000,   // 5초 타임아웃
       });
       const { latitude: lat, longitude: lng } = location.coords;
       const timestamp = location.timestamp;
