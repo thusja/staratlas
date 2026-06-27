@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
+  Pressable,
 } from 'react-native';
 import { GLView } from 'expo-gl';
 import { Renderer } from 'expo-three';
@@ -15,12 +16,17 @@ import { router } from 'expo-router';
 import { useObserverStore } from '../store/observerStore';
 import { useRenderedStarStore } from '../store/renderedStarStore';
 import { magnitudeToSize, magnitudeToOpacity } from '../lib/astro';
+import type { StarPoint3D } from '../store/types';
 
 const SPHERE_RADIUS = 100;
 
 export default function SkyViewScreen() {
   const [isViewDrifted, setIsViewDrifted] = useState(false);
   const [compassLabel, setCompassLabel] = useState('↑ 북');
+  const [selectedStar, setSelectedStar] = useState<StarPoint3D | null>(null);
+
+  // GLView 레이아웃 크기 (Raycaster NDC 변환용)
+  const glLayoutRef = useRef({ width: 1, height: 1 });
 
   const lat = useObserverStore((s) => s.lat);
   const lng = useObserverStore((s) => s.lng);
@@ -159,6 +165,58 @@ export default function SkyViewScreen() {
     animate();
   };
 
+  // 터치 좌표 → 가장 가까운 별 히트 테스트 (Raycaster)
+  const hitTestStar = (touchX: number, touchY: number): StarPoint3D | null => {
+    const camera = cameraRef.current;
+    if (!camera) return null;
+
+    const { width, height } = glLayoutRef.current;
+    // NDC(-1~1) 좌표로 변환
+    const ndcX =  (touchX / width)  * 2 - 1;
+    const ndcY = -(touchY / height) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.params.Points = { threshold: 3 }; // 별 히트 허용 반경 (픽셀 단위)
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+
+    // 별 위치 벡터와 ray 간 각도가 가장 작은 별 탐색
+    let closestStar: StarPoint3D | null = null;
+    let closestAngle = Infinity;
+    const RAY_THRESHOLD_RAD = 0.03; // ~1.7° — 손가락 터치 허용 범위
+
+    for (const star of renderedStars) {
+      const starVec = new THREE.Vector3(star.x, star.y, star.z).normalize();
+      const rayDir  = raycaster.ray.direction.clone().normalize();
+      const angle   = rayVec(starVec, rayDir);
+      if (angle < RAY_THRESHOLD_RAD && angle < closestAngle) {
+        closestAngle = angle;
+        closestStar  = star;
+      }
+    }
+    return closestStar;
+  };
+
+  // 두 단위벡터 간 각도(rad)
+  const rayVec = (a: THREE.Vector3, b: THREE.Vector3) =>
+    Math.acos(Math.min(1, Math.max(-1, a.dot(b))));
+
+  // 탭 제스처 — 별 선택
+  const tapGesture = Gesture.Tap()
+    .maxDuration(250)
+    .onEnd((e) => {
+      runOnJS(handleTap)(e.x, e.y);
+    });
+
+  const handleTap = (x: number, y: number) => {
+    // 팝업이 열려있으면 닫기
+    if (selectedStar) {
+      setSelectedStar(null);
+      return;
+    }
+    const hit = hitTestStar(x, y);
+    setSelectedStar(hit);
+  };
+
   // 현재 방향으로 카메라 복귀 (트윈 애니메이션)
   const resetView = () => {
     tweenTargetRef.current = { azimuth: 0, altitude: 0.5 };
@@ -211,7 +269,10 @@ export default function SkyViewScreen() {
     fovRef.current = Math.max(20, Math.min(120, fovRef.current / e.scale));
   });
 
-  const composed = Gesture.Simultaneous(panGesture, pinchGesture);
+  const composed = Gesture.Exclusive(
+    tapGesture,
+    Gesture.Simultaneous(panGesture, pinchGesture),
+  );
 
   useEffect(() => {
     rotationRef.current = { azimuth: 0, altitude: 0.5 };
@@ -225,7 +286,16 @@ export default function SkyViewScreen() {
     <View style={styles.container}>
       {/* 3D GL 뷰 */}
       <GestureDetector gesture={composed}>
-        <GLView style={StyleSheet.absoluteFill} onContextCreate={onContextCreate} />
+        <GLView
+          style={StyleSheet.absoluteFill}
+          onContextCreate={onContextCreate}
+          onLayout={(e) => {
+            glLayoutRef.current = {
+              width:  e.nativeEvent.layout.width,
+              height: e.nativeEvent.layout.height,
+            };
+          }}
+        />
       </GestureDetector>
 
       {/* 상단 정보 바 */}
@@ -252,6 +322,39 @@ export default function SkyViewScreen() {
             <Text style={styles.resetText}>현재 하늘로 돌아오기</Text>
           </TouchableOpacity>
         </View>
+      )}
+
+      {/* 별 정보 팝업 */}
+      {selectedStar && (
+        <Pressable style={styles.starPopupOverlay} onPress={() => setSelectedStar(null)}>
+          <View style={styles.starPopup} onStartShouldSetResponder={() => true}>
+            <View style={styles.starPopupHeader}>
+              <Text style={styles.starPopupName}>
+                {selectedStar.name ?? `HIP ${selectedStar.hipId}`}
+              </Text>
+              <TouchableOpacity onPress={() => setSelectedStar(null)} hitSlop={12}>
+                <Text style={styles.starPopupClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.starPopupBody}>
+              <View style={styles.starPopupRow}>
+                <Text style={styles.starPopupLabel}>등급</Text>
+                <Text style={styles.starPopupValue}>{selectedStar.magnitude.toFixed(2)}</Text>
+              </View>
+              <View style={styles.starPopupRow}>
+                <Text style={styles.starPopupLabel}>Hipparcos ID</Text>
+                <Text style={styles.starPopupValue}>HIP {selectedStar.hipId}</Text>
+              </View>
+              <View style={styles.starPopupRow}>
+                <Text style={styles.starPopupLabel}>밝기</Text>
+                <Text style={styles.starPopupValue}>
+                  {selectedStar.magnitude < 1 ? '★★★ 1등성' :
+                   selectedStar.magnitude < 3 ? '★★☆ 2~3등성' : '★☆☆ 4~5등성'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </Pressable>
       )}
     </View>
   );
@@ -324,5 +427,52 @@ const styles = StyleSheet.create({
   resetText: {
     color: '#c8d8f8',
     fontSize: 14,
+  },
+  // 별 팝업
+  starPopupOverlay: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'flex-end',
+  },
+  starPopup: {
+    backgroundColor: '#0d1a2e',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    borderColor: '#1e3050',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 40,
+  },
+  starPopupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  starPopupName: {
+    fontSize: 20,
+    fontWeight: '300',
+    color: '#d0e4ff',
+    letterSpacing: 1,
+  },
+  starPopupClose: {
+    fontSize: 16,
+    color: '#4a6080',
+  },
+  starPopupBody: {
+    gap: 12,
+  },
+  starPopupRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  starPopupLabel: {
+    fontSize: 13,
+    color: '#506070',
+  },
+  starPopupValue: {
+    fontSize: 14,
+    color: '#90b0d0',
   },
 });
