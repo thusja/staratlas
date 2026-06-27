@@ -1,5 +1,3 @@
-import type { Star } from '@staratlas/shared';
-
 export type ObserverState = {
   lat: number | null;
   lng: number | null;

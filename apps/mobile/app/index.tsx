@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { Redirect } from 'expo-router';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 

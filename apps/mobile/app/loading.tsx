@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, SafeAreaView } from 'react-native';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
@@ -7,14 +7,14 @@ import { useRenderedStarStore } from '../store/renderedStarStore';
 import { useStarCatalog } from '../hooks/useStarCatalog';
 import { starToPoint3D } from '../lib/astro';
 
-const STEPS = [
-  '위치를 확인하는 중...',
-  '별 목록을 불러오는 중...',
-  '하늘을 계산하는 중...',
-];
+const STEPS: Record<1 | 2 | 3, string> = {
+  1: '위치를 확인하는 중...',
+  2: '별 목록을 불러오는 중...',
+  3: '하늘을 계산하는 중...',
+};
 
 export default function LoadingScreen() {
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [locationLabel, setLocationLabel] = useState('');
   const [locationReady, setLocationReady] = useState(false);
   const spinAnim = useRef(new Animated.Value(0)).current;
@@ -23,7 +23,7 @@ export default function LoadingScreen() {
   const setRenderedStars = useRenderedStarStore((s) => s.setRenderedStars);
 
   // 위치 수집 완료 후 카탈로그 자동 fetch 시작
-  const { data: stars, isSuccess, isError } = useStarCatalog();
+  const { data: stars, isSuccess, isError } = useStarCatalog(locationReady);
 
   // 스피너 애니메이션
   useEffect(() => {
@@ -34,24 +34,19 @@ export default function LoadingScreen() {
         useNativeDriver: true,
       })
     ).start();
-  }, []);
+  }, [spinAnim]);
 
   const spin = spinAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
   });
 
-  // STEP 1 — GPS 수집
-  useEffect(() => {
-    collectLocation();
-  }, []);
-
-  const collectLocation = async () => {
-    setStep(0);
+  const collectLocation = useCallback(async () => {
+    setStep(1);
     try {
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
-        timeInterval: 5000,   // 5초 타임아웃
+        timeInterval: 5000,
       });
       const { latitude: lat, longitude: lng } = location.coords;
       const timestamp = location.timestamp;
@@ -64,21 +59,20 @@ export default function LoadingScreen() {
       }
 
       setObserver(lat, lng, timestamp);
-      setStep(1); // 별 카탈로그 로드 단계로 — useStarCatalog가 자동 실행됨
+      setStep(1);
       setLocationReady(true);
     } catch {
       router.replace('/permission');
     }
-  };
+  }, [setObserver]);
 
-  // STEP 2→3 — 카탈로그 로드 완료 후 좌표 변환
+  // STEP 1 — GPS 수집
   useEffect(() => {
-    if (!locationReady || !isSuccess || !stars) return;
-    computeStars();
-  }, [locationReady, isSuccess, stars]);
+    collectLocation();
+  }, [collectLocation]);
 
-  const computeStars = async () => {
-    setStep(2);
+  const computeStars = useCallback(async () => {
+    setStep(3);
     const observer = useObserverStore.getState();
     if (observer.lat == null || observer.lng == null || observer.timestamp == null) return;
 
@@ -89,7 +83,13 @@ export default function LoadingScreen() {
 
     setRenderedStars(points);
     router.replace('/sky');
-  };
+  }, [stars, setRenderedStars]);
+
+  // STEP 2→3 — 카탈로그 로드 완료 후 좌표 변환
+  useEffect(() => {
+    if (!locationReady || !isSuccess || !stars) return;
+    computeStars();
+  }, [locationReady, isSuccess, stars, computeStars]);
 
   // 카탈로그 로드 실패
   useEffect(() => {
@@ -107,7 +107,7 @@ export default function LoadingScreen() {
       </Animated.Text>
       <Text style={styles.statusText}>{STEPS[step]}</Text>
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${((step + 1) / 3) * 100}%` }]} />
+        <View style={[styles.progressFill, { width: `${((step) / 3) * 100}%` }]} />
       </View>
       {locationLabel ? (
         <Text style={styles.meta}>

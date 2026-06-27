@@ -9,6 +9,8 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <QueryClientProvider client={queryClient}>
+        {/* expo-router require.context는 Expo 전용 확장으로 타입 미지원 */}
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         <ExpoRoot context={(require as any).context('./app')} />
       </QueryClientProvider>
     </GestureHandlerRootView>

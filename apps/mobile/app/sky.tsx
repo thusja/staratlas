@@ -10,6 +10,8 @@ import { GLView } from 'expo-gl';
 import { Renderer } from 'expo-three';
 import * as THREE from 'three';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
+import { router } from 'expo-router';
 import { useObserverStore } from '../store/observerStore';
 import { useRenderedStarStore } from '../store/renderedStarStore';
 import { magnitudeToSize, magnitudeToOpacity } from '../lib/astro';
@@ -25,10 +27,23 @@ export default function SkyViewScreen() {
   const timestamp = useObserverStore((s) => s.timestamp);
   const renderedStars = useRenderedStarStore((s) => s.renderedStars);
 
+  // renderedStars 없이 직접 진입한 경우 로딩으로 복귀 (마운트 시 1회만 체크)
+  useEffect(
+    () => {
+      if (renderedStars.length === 0) {
+        router.replace('/loading');
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const rotationRef = useRef({ azimuth: 0, altitude: 0 });
   const initialRotRef = useRef({ azimuth: 0, altitude: 0 });
+  // 트윈 목표값 — null이면 트윈 비활성
+  const tweenTargetRef = useRef<{ azimuth: number; altitude: number } | null>(null);
   const fovRef = useRef(75);
   const glRef = useRef<WebGLRenderingContext | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -109,9 +124,27 @@ export default function SkyViewScreen() {
     });
     scene.add(new THREE.Mesh(horizonGeo, horizonMat));
 
-    // 렌더 루프
+    // 렌더 루프 (lerp 트윈 포함)
+    const LERP_FACTOR = 0.08;
     const animate = () => {
       rafRef.current = requestAnimationFrame(animate);
+
+      // 트윈 활성화 중이면 현재 rotation을 목표로 보간
+      const target = tweenTargetRef.current;
+      if (target) {
+        const cur = rotationRef.current;
+        const nextAz  = cur.azimuth  + (target.azimuth  - cur.azimuth)  * LERP_FACTOR;
+        const nextAlt = cur.altitude + (target.altitude - cur.altitude) * LERP_FACTOR;
+        rotationRef.current = { azimuth: nextAz, altitude: nextAlt };
+        initialRotRef.current = { azimuth: nextAz, altitude: nextAlt };
+        // 목표에 충분히 가까우면 트윈 종료
+        if (Math.abs(nextAz - target.azimuth) < 0.001 && Math.abs(nextAlt - target.altitude) < 0.001) {
+          rotationRef.current = { ...target };
+          initialRotRef.current = { ...target };
+          tweenTargetRef.current = null;
+        }
+      }
+
       const { azimuth, altitude } = rotationRef.current;
       camera.lookAt(
         Math.cos(altitude) * Math.sin(azimuth) * SPHERE_RADIUS,
@@ -119,14 +152,16 @@ export default function SkyViewScreen() {
         Math.cos(altitude) * Math.cos(azimuth) * SPHERE_RADIUS,
       );
       renderer.render(scene, camera);
+      // expo-gl 전용 확장 메서드 — 표준 WebGLRenderingContext 타입에 미포함
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (gl as any).endFrameEXP();
     };
     animate();
   };
 
-  // 현재 방향으로 카메라 복귀
+  // 현재 방향으로 카메라 복귀 (트윈 애니메이션)
   const resetView = () => {
-    rotationRef.current = { azimuth: 0, altitude: 0.5 }; // 천정 방향
+    tweenTargetRef.current = { azimuth: 0, altitude: 0.5 };
     setIsViewDrifted(false);
   };
 
@@ -158,8 +193,8 @@ export default function SkyViewScreen() {
       const drifted =
         Math.abs(newAz % (2 * Math.PI)) > 0.2618 ||
         Math.abs(newAlt - 0.5) > 0.2618;
-      setIsViewDrifted(drifted);
-      setCompassLabel(azimuthToCompass(newAz));
+      runOnJS(setIsViewDrifted)(drifted);
+      runOnJS(setCompassLabel)(azimuthToCompass(newAz));
     })
     .onEnd(() => {
       initialRotRef.current = { ...rotationRef.current };
@@ -195,8 +230,14 @@ export default function SkyViewScreen() {
 
       {/* 상단 정보 바 */}
       <SafeAreaView style={styles.topBar} pointerEvents="none">
-        <Text style={styles.timeText}>{timeLabel}</Text>
-        <Text style={styles.locationText}>📍 {locationLabel}</Text>
+        <View style={styles.topLeft}>
+          <Text style={styles.menuIcon}>☰</Text>
+          <Text style={styles.timeText}>{timeLabel}</Text>
+        </View>
+        <View style={styles.topRight}>
+          <Text style={styles.locationText}>📍 {locationLabel}</Text>
+          <Text style={styles.starCount}>{renderedStars.length}개</Text>
+        </View>
       </SafeAreaView>
 
       {/* 방위 힌트 */}
@@ -228,8 +269,23 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 8,
+  },
+  topLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  topRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  menuIcon: {
+    color: '#4a6080',
+    fontSize: 18,
   },
   timeText: {
     color: '#8090b0',
@@ -238,6 +294,10 @@ const styles = StyleSheet.create({
   locationText: {
     color: '#8090b0',
     fontSize: 14,
+  },
+  starCount: {
+    color: '#3a5070',
+    fontSize: 12,
   },
   compass: {
     position: 'absolute',

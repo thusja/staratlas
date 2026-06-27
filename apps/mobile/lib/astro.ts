@@ -1,8 +1,6 @@
 import {
   Observer,
-  Equator,
   Horizon,
-  Body,
   AstroTime,
 } from 'astronomy-engine';
 import type { Star } from '@staratlas/shared';

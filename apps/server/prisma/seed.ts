@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 /**
  * Hipparcos 카탈로그 시딩 스크립트
  *

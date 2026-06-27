@@ -10,11 +10,12 @@ const fetchStars = async (): Promise<Star[]> => {
   return json.stars;
 };
 
-export const useStarCatalog = () =>
+export const useStarCatalog = (enabled = true) =>
   useQuery({
     queryKey: ['stars', { magnitudeMax: 5 }],
     queryFn: fetchStars,
     staleTime: Infinity,  // 앱 세션 동안 재요청 안 함
     gcTime: Infinity,     // 가비지 컬렉션 없음
     retry: 2,
+    enabled,              // GPS 수집 전엔 fetch 안 함
   });
