@@ -19,6 +19,9 @@ build/
 .DS_Store
 Thumbs.db
 
+# 별 카탈로그 원본 (50MB — 저장소에 포함하지 않음)
+apps/server/prisma/hip_main.dat
+
 # IDE
 .vscode/
 .idea/
