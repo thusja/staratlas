@@ -16,11 +16,14 @@ const STEPS = [
 export default function LoadingScreen() {
   const [step, setStep] = useState(0);
   const [locationLabel, setLocationLabel] = useState('');
+  const [locationReady, setLocationReady] = useState(false);
   const spinAnim = useRef(new Animated.Value(0)).current;
 
   const setObserver = useObserverStore((s) => s.setObserver);
   const setRenderedStars = useRenderedStarStore((s) => s.setRenderedStars);
-  const { data: stars, refetch } = useStarCatalog();
+
+  // 위치 수집 완료 후 카탈로그 자동 fetch 시작
+  const { data: stars, isSuccess, isError } = useStarCatalog();
 
   // 스피너 애니메이션
   useEffect(() => {
@@ -38,53 +41,59 @@ export default function LoadingScreen() {
     outputRange: ['0deg', '360deg'],
   });
 
+  // STEP 1 — GPS 수집
   useEffect(() => {
-    run();
+    collectLocation();
   }, []);
 
-  const run = async () => {
-    // STEP 1 — GPS 수집
+  const collectLocation = async () => {
     setStep(0);
-    let location: Location.LocationObject;
     try {
-      location = await Location.getCurrentPositionAsync({
+      const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
+      const { latitude: lat, longitude: lng } = location.coords;
+      const timestamp = location.timestamp;
+
+      try {
+        const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+        setLocationLabel(geo?.city || geo?.region || `${lat.toFixed(2)}, ${lng.toFixed(2)}`);
+      } catch {
+        setLocationLabel(`${lat.toFixed(2)}, ${lng.toFixed(2)}`);
+      }
+
+      setObserver(lat, lng, timestamp);
+      setStep(1); // 별 카탈로그 로드 단계로 — useStarCatalog가 자동 실행됨
+      setLocationReady(true);
     } catch {
       router.replace('/permission');
-      return;
     }
+  };
 
-    const { latitude: lat, longitude: lng, altitude } = location.coords;
-    const timestamp = location.timestamp;
+  // STEP 2→3 — 카탈로그 로드 완료 후 좌표 변환
+  useEffect(() => {
+    if (!locationReady || !isSuccess || !stars) return;
+    computeStars();
+  }, [locationReady, isSuccess, stars]);
 
-    // 위치명 역지오코딩
-    try {
-      const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
-      setLocationLabel(geo?.city || geo?.region || `${lat.toFixed(2)}, ${lng.toFixed(2)}`);
-    } catch {
-      setLocationLabel(`${lat.toFixed(2)}, ${lng.toFixed(2)}`);
-    }
-
-    setObserver(lat, lng, timestamp);
-
-    // STEP 2 — 별 카탈로그 로드
-    setStep(1);
-    const result = await refetch();
-    const catalog = result.data ?? [];
-
-    // STEP 3 — 좌표 변환
+  const computeStars = async () => {
     setStep(2);
-    const date = new Date(timestamp);
-    const points = catalog
-      .map((star) => starToPoint3D(star, lat, lng, date))
-      .filter((p) => p !== null);
+    const observer = useObserverStore.getState();
+    if (observer.lat == null || observer.lng == null || observer.timestamp == null) return;
+
+    const date = new Date(observer.timestamp);
+    const points = (stars ?? [])
+      .map((star) => starToPoint3D(star, observer.lat!, observer.lng!, date))
+      .filter((p): p is NonNullable<typeof p> => p !== null);
 
     setRenderedStars(points);
-
-    // 완료 → 하늘 뷰로 이동
     router.replace('/sky');
   };
+
+  // 카탈로그 로드 실패
+  useEffect(() => {
+    if (isError) router.replace('/permission');
+  }, [isError]);
 
   const now = new Date();
   const timeLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -92,20 +101,13 @@ export default function LoadingScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* 스피너 */}
       <Animated.Text style={[styles.spinner, { transform: [{ rotate: spin }] }]}>
         ✦
       </Animated.Text>
-
-      {/* 상태 텍스트 */}
       <Text style={styles.statusText}>{STEPS[step]}</Text>
-
-      {/* 프로그레스 바 */}
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${((step + 1) / 3) * 100}%` }]} />
       </View>
-
-      {/* 위치 & 시각 */}
       {locationLabel ? (
         <Text style={styles.meta}>
           📍 {locationLabel}  ·  {dateLabel}  {timeLabel}

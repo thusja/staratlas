@@ -9,7 +9,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <QueryClientProvider client={queryClient}>
-        <ExpoRoot context={require.context('./app')} />
+        <ExpoRoot context={(require as any).context('./app')} />
       </QueryClientProvider>
     </GestureHandlerRootView>
   );
