@@ -6,9 +6,10 @@
     "packages/*"
   ],
   "scripts": {
-    "mobile": "yarn workspace @staratlas/mobile start",
-    "server": "yarn workspace @staratlas/server dev",
-    "server:build": "yarn workspace @staratlas/server build",
+    "start": "npm run -w @staratlas/mobile start",
+    "mobile": "npm run -w @staratlas/mobile start",
+    "server": "npm run -w @staratlas/server dev",
+    "server:build": "npm run -w @staratlas/server build",
     "lint": "eslint \"apps/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"apps/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\" --fix",
     "format": "prettier --write \"apps/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\"",
