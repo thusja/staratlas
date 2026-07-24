@@ -13,6 +13,18 @@ async function main() {
   await app.register(prismaPlugin);
   await app.register(starsRoute, { prefix: '/api' });
 
+  // 헬스 체크 — 서버·DB·Redis 연결 상태 확인
+  app.get('/health', async (_request, reply) => {
+    try {
+      await app.prisma.$queryRaw`SELECT 1`;
+      await app.redis.ping();
+      return reply.send({ status: 'ok', db: 'ok', redis: 'ok' });
+    } catch (err) {
+      app.log.error({ err }, 'Health check 실패');
+      return reply.status(503).send({ status: 'error' });
+    }
+  });
+
   const port = Number(process.env.PORT) || 3000;
   await app.listen({ port, host: '0.0.0.0' });
 }

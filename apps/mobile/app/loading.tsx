@@ -59,7 +59,7 @@ export default function LoadingScreen() {
       }
 
       setObserver(lat, lng, timestamp);
-      setStep(1);
+      setStep(2);
       setLocationReady(true);
     } catch {
       router.replace('/permission');

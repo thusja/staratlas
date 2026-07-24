@@ -58,7 +58,7 @@ export default function SkyViewScreen() {
   const now = new Date(timestamp ?? Date.now());
   const timeLabel = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const locationLabel = lat != null && lng != null
-    ? `${lat.toFixed(1)}°N  ${Math.abs(lng).toFixed(1)}°${lng >= 0 ? 'E' : 'W'}`
+    ? `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}  ${Math.abs(lng).toFixed(1)}°${lng >= 0 ? 'E' : 'W'}`
     : '위치 없음';
 
   const onContextCreate = async (gl: WebGLRenderingContext) => {
