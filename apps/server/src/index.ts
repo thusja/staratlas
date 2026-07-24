@@ -3,7 +3,10 @@ import Fastify from 'fastify';
 import corsPlugin from './plugins/cors';
 import redisPlugin from './plugins/redis';
 import prismaPlugin from './plugins/prisma';
+import jwtPlugin from './plugins/jwt';
 import starsRoute from './routes/stars';
+import authRoute from './routes/auth';
+import constellationsRoute from './routes/constellations';
 
 const app = Fastify({ logger: true });
 
@@ -11,7 +14,10 @@ async function main() {
   await app.register(corsPlugin);
   await app.register(redisPlugin);
   await app.register(prismaPlugin);
+  await app.register(jwtPlugin);
   await app.register(starsRoute, { prefix: '/api' });
+  await app.register(authRoute,  { prefix: '/api/auth' });
+  await app.register(constellationsRoute, { prefix: '/api/constellations' });
 
   // 헬스 체크 — 서버·DB·Redis 연결 상태 확인
   app.get('/health', async (_request, reply) => {

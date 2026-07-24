@@ -31,3 +31,43 @@ model Star {
   @@index([magnitude])
   @@map("stars")
 }
+
+/// 서비스 이용자
+model User {
+  id             Int             @id @default(autoincrement())
+  email          String          @unique
+  passwordHash   String          @map("password_hash")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  constellations Constellation[]
+
+  @@map("users")
+}
+
+/// 사용자가 저장한 별자리
+model Constellation {
+  id         Int                 @id @default(autoincrement())
+  userId     Int                 @map("user_id")
+  name       String
+  memo       String?
+  lat        Float
+  lng        Float
+  observedAt DateTime            @map("observed_at")
+  createdAt  DateTime            @default(now()) @map("created_at")
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stars      ConstellationStar[]
+
+  @@index([userId])
+  @@map("constellations")
+}
+
+/// 별자리를 구성하는 별 (순서 포함)
+model ConstellationStar {
+  id              Int           @id @default(autoincrement())
+  constellationId Int           @map("constellation_id")
+  hipId           Int           @map("hip_id")
+  order           Int
+  constellation   Constellation @relation(fields: [constellationId], references: [id], onDelete: Cascade)
+
+  @@index([constellationId])
+  @@map("constellation_stars")
+}

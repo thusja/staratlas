@@ -15,6 +15,7 @@ import { runOnJS } from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { useObserverStore } from '../store/observerStore';
 import { useRenderedStarStore } from '../store/renderedStarStore';
+import { useDraftConstellationStore } from '../store/draftConstellationStore';
 import { magnitudeToSize, magnitudeToOpacity } from '../lib/astro';
 import type { StarPoint3D } from '../store/types';
 
@@ -24,6 +25,14 @@ export default function SkyViewScreen() {
   const [isViewDrifted, setIsViewDrifted] = useState(false);
   const [compassLabel, setCompassLabel] = useState('↑ 북');
   const [selectedStar, setSelectedStar] = useState<StarPoint3D | null>(null);
+  const [isConstellationMode, setIsConstellationMode] = useState(false);
+
+  const constellationStars = useDraftConstellationStore((s) => s.stars);
+  const addDraftStar        = useDraftConstellationStore((s) => s.addStar);
+  const removeDraftStar     = useDraftConstellationStore((s) => s.removeStar);
+  const clearDraft          = useDraftConstellationStore((s) => s.clear);
+
+  const constellationLineRef = useRef<THREE.Line | null>(null);
 
   // GLView 레이아웃 크기 (Raycaster NDC 변환용)
   const glLayoutRef = useRef({ width: 1, height: 1 });
@@ -200,7 +209,31 @@ export default function SkyViewScreen() {
   const rayVec = (a: THREE.Vector3, b: THREE.Vector3) =>
     Math.acos(Math.min(1, Math.max(-1, a.dot(b))));
 
-  // 탭 제스처 — 별 선택
+  // 별자리 선택 시 3D 연결선 업데이트
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    if (constellationLineRef.current) {
+      scene.remove(constellationLineRef.current);
+      constellationLineRef.current.geometry.dispose();
+      (constellationLineRef.current.material as THREE.Material).dispose();
+      constellationLineRef.current = null;
+    }
+
+    if (constellationStars.length >= 2) {
+      const points = constellationStars.map((s) => new THREE.Vector3(s.x, s.y, s.z));
+      const geo = new THREE.BufferGeometry().setFromPoints(points);
+      const mat = new THREE.LineBasicMaterial({ color: 0x4a80ff, opacity: 0.8, transparent: true });
+      const line = new THREE.Line(geo, mat);
+      scene.add(line);
+      constellationLineRef.current = line;
+    }
+  // sceneRef는 mount 후 고정 — 의존성 제외
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [constellationStars]);
+
+  // 탭 제스처 — 별 선택 / 별자리 드로잉
   const tapGesture = Gesture.Tap()
     .maxDuration(250)
     .onEnd((e) => {
@@ -208,13 +241,36 @@ export default function SkyViewScreen() {
     });
 
   const handleTap = (x: number, y: number) => {
-    // 팝업이 열려있으면 닫기
+    if (isConstellationMode) {
+      const hit = hitTestStar(x, y);
+      if (!hit) return;
+      const already = constellationStars.some((s) => s.hipId === hit.hipId);
+      if (already) removeDraftStar(hit.hipId);
+      else         addDraftStar(hit);
+      return;
+    }
+    // 일반 모드 — 별 정보 팝업
     if (selectedStar) {
       setSelectedStar(null);
       return;
     }
     const hit = hitTestStar(x, y);
     setSelectedStar(hit);
+  };
+
+  const enterConstellationMode = () => {
+    setSelectedStar(null);
+    clearDraft();
+    setIsConstellationMode(true);
+  };
+
+  const exitConstellationMode = () => {
+    setIsConstellationMode(false);
+    clearDraft();
+  };
+
+  const goToSaveConstellation = () => {
+    router.push('/save-constellation');
   };
 
   // 현재 방향으로 카메라 복귀 (트윈 애니메이션)
@@ -316,12 +372,44 @@ export default function SkyViewScreen() {
       </View>
 
       {/* 현재 하늘로 돌아오기 버튼 */}
-      {isViewDrifted && (
+      {isViewDrifted && !isConstellationMode && (
         <View style={styles.resetWrapper}>
           <TouchableOpacity style={styles.resetButton} onPress={resetView} activeOpacity={0.8}>
             <Text style={styles.resetText}>현재 하늘로 돌아오기</Text>
           </TouchableOpacity>
         </View>
+      )}
+
+      {/* 별자리 만들기 플로팅 버튼 */}
+      {!isConstellationMode && (
+        <View style={styles.constellationModeWrapper}>
+          <TouchableOpacity style={styles.constellationModeButton} onPress={enterConstellationMode} activeOpacity={0.8}>
+            <Text style={styles.constellationModeText}>✦ 별자리 만들기</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* 별자리 드로잉 모드 하단 바 */}
+      {isConstellationMode && (
+        <SafeAreaView style={styles.constellationBar}>
+          <View style={styles.constellationBarInner}>
+            <Text style={styles.constellationHint}>
+              {constellationStars.length === 0
+                ? '별을 탭해 이어주세요'
+                : `${constellationStars.length}개 선택됨`}
+            </Text>
+            <View style={styles.constellationActions}>
+              {constellationStars.length >= 2 && (
+                <TouchableOpacity style={styles.saveButton} onPress={goToSaveConstellation} activeOpacity={0.8}>
+                  <Text style={styles.saveButtonText}>저장</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.cancelButton} onPress={exitConstellationMode} activeOpacity={0.8}>
+                <Text style={styles.cancelButtonText}>취소</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
       )}
 
       {/* 별 정보 팝업 */}
@@ -426,6 +514,69 @@ const styles = StyleSheet.create({
   },
   resetText: {
     color: '#c8d8f8',
+    fontSize: 14,
+  },
+  constellationModeWrapper: {
+    position: 'absolute',
+    bottom: 140,
+    right: 20,
+  },
+  constellationModeButton: {
+    backgroundColor: '#0d1a35',
+    borderWidth: 1,
+    borderColor: '#4a80ff',
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  constellationModeText: {
+    color: '#8ab4ff',
+    fontSize: 13,
+  },
+  constellationBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(8, 14, 28, 0.92)',
+    borderTopWidth: 1,
+    borderTopColor: '#1a3050',
+  },
+  constellationBarInner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  constellationHint: {
+    color: '#8ab4ff',
+    fontSize: 14,
+    flex: 1,
+  },
+  constellationActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  saveButton: {
+    backgroundColor: '#2040a0',
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+  },
+  saveButtonText: {
+    color: '#c8d8f8',
+    fontSize: 14,
+  },
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: '#3a5070',
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+  },
+  cancelButtonText: {
+    color: '#6a8090',
     fontSize: 14,
   },
   // 별 팝업
