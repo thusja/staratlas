@@ -44,27 +44,61 @@ export default function LoadingScreen() {
   const collectLocation = useCallback(async () => {
     setStep(1);
     try {
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-        timeInterval: 5000,
-      });
-      const { latitude: lat, longitude: lng } = location.coords;
-      const timestamp = location.timestamp;
+      // 먼저 마지막으로 알려진 위치 시도 (에뮬레이터 친화적)
+      let location = await Location.getLastKnownPositionAsync();
 
-      try {
-        const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
-        setLocationLabel(geo?.city || geo?.region || `${lat.toFixed(2)}, ${lng.toFixed(2)}`);
-      } catch {
-        setLocationLabel(`${lat.toFixed(2)}, ${lng.toFixed(2)}`);
+      if (!location) {
+        // 실시간 GPS 시도 (타임아웃 10초)
+        location = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
+        ]) as typeof location;
+      }
+
+      let lat: number;
+      let lng: number;
+      let timestamp: number;
+
+      if (location) {
+        lat = location.coords.latitude;
+        lng = location.coords.longitude;
+        timestamp = location.timestamp;
+      } else {
+        // GPS 없는 환경(에뮬레이터)에서는 서울 기본값 사용
+        lat = 37.5665;
+        lng = 126.978;
+        timestamp = Date.now();
+        setLocationLabel('서울 (기본값)');
+      }
+
+      if (!locationLabel) {
+        try {
+          const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+          setLocationLabel(geo?.city || geo?.region || `${lat.toFixed(2)}, ${lng.toFixed(2)}`);
+        } catch {
+          setLocationLabel(`${lat.toFixed(2)}, ${lng.toFixed(2)}`);
+        }
       }
 
       setObserver(lat, lng, timestamp);
       setStep(2);
       setLocationReady(true);
     } catch {
-      router.replace('/permission');
+      // 권한 자체가 없는 경우에만 permission으로 이동
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        router.replace('/permission');
+      } else {
+        // 권한은 있지만 GPS 실패 → 서울 기본값
+        const lat = 37.5665;
+        const lng = 126.978;
+        setLocationLabel('서울 (기본값)');
+        setObserver(lat, lng, Date.now());
+        setStep(2);
+        setLocationReady(true);
+      }
     }
-  }, [setObserver]);
+  }, [setObserver, locationLabel]);
 
   // STEP 1 — GPS 수집
   useEffect(() => {
@@ -93,7 +127,12 @@ export default function LoadingScreen() {
 
   // 카탈로그 로드 실패
   useEffect(() => {
-    if (isError) router.replace('/permission');
+    if (isError) {
+      // 서버 오류는 permission 화면이 아닌 재시도로 처리
+      console.warn('별 카탈로그 로드 실패, 재시도 중...');
+      const timer = setTimeout(() => setLocationReady(false), 2000);
+      return () => clearTimeout(timer);
+    }
   }, [isError]);
 
   const now = new Date();

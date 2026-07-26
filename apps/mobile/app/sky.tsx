@@ -11,7 +11,7 @@ import { GLView } from 'expo-gl';
 import { Renderer } from 'expo-three';
 import * as THREE from 'three';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
-import { runOnJS } from 'react-native-reanimated';
+import { runOnJS, useSharedValue } from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { useObserverStore } from '../store/observerStore';
 import { useRenderedStarStore } from '../store/renderedStarStore';
@@ -55,8 +55,11 @@ export default function SkyViewScreen() {
 
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
-  const rotationRef = useRef({ azimuth: 0, altitude: 0 });
-  const initialRotRef = useRef({ azimuth: 0, altitude: 0 });
+  // worklet 뮤테이션이 필요한 회전값 — useSharedValue 사용
+  const rotAz  = useSharedValue(0);
+  const rotAlt = useSharedValue(0.5);
+  const initAz  = useSharedValue(0);
+  const initAlt = useSharedValue(0.5);
   // 트윈 목표값 — null이면 트윈 비활성
   const tweenTargetRef = useRef<{ azimuth: number; altitude: number } | null>(null);
   const fovRef = useRef(75);
@@ -147,20 +150,24 @@ export default function SkyViewScreen() {
       // 트윈 활성화 중이면 현재 rotation을 목표로 보간
       const target = tweenTargetRef.current;
       if (target) {
-        const cur = rotationRef.current;
-        const nextAz  = cur.azimuth  + (target.azimuth  - cur.azimuth)  * LERP_FACTOR;
-        const nextAlt = cur.altitude + (target.altitude - cur.altitude) * LERP_FACTOR;
-        rotationRef.current = { azimuth: nextAz, altitude: nextAlt };
-        initialRotRef.current = { azimuth: nextAz, altitude: nextAlt };
+        const nextAz  = rotAz.value  + (target.azimuth  - rotAz.value)  * LERP_FACTOR;
+        const nextAlt = rotAlt.value + (target.altitude - rotAlt.value) * LERP_FACTOR;
+        rotAz.value  = nextAz;
+        rotAlt.value = nextAlt;
+        initAz.value  = nextAz;
+        initAlt.value = nextAlt;
         // 목표에 충분히 가까우면 트윈 종료
         if (Math.abs(nextAz - target.azimuth) < 0.001 && Math.abs(nextAlt - target.altitude) < 0.001) {
-          rotationRef.current = { ...target };
-          initialRotRef.current = { ...target };
+          rotAz.value  = target.azimuth;
+          rotAlt.value = target.altitude;
+          initAz.value  = target.azimuth;
+          initAlt.value = target.altitude;
           tweenTargetRef.current = null;
         }
       }
 
-      const { azimuth, altitude } = rotationRef.current;
+      const azimuth = rotAz.value;
+      const altitude = rotAlt.value;
       camera.lookAt(
         Math.cos(altitude) * Math.sin(azimuth) * SPHERE_RADIUS,
         Math.sin(altitude) * SPHERE_RADIUS,
@@ -233,13 +240,6 @@ export default function SkyViewScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [constellationStars]);
 
-  // 탭 제스처 — 별 선택 / 별자리 드로잉
-  const tapGesture = Gesture.Tap()
-    .maxDuration(250)
-    .onEnd((e) => {
-      runOnJS(handleTap)(e.x, e.y);
-    });
-
   const handleTap = (x: number, y: number) => {
     if (isConstellationMode) {
       const hit = hitTestStar(x, y);
@@ -257,6 +257,13 @@ export default function SkyViewScreen() {
     const hit = hitTestStar(x, y);
     setSelectedStar(hit);
   };
+
+  // 탭 제스처 — 별 선택 / 별자리 드로잉
+  const tapGesture = Gesture.Tap()
+    .maxDuration(250)
+    .onEnd((e) => {
+      runOnJS(handleTap)(e.x, e.y);
+    });
 
   const enterConstellationMode = () => {
     setSelectedStar(null);
@@ -279,51 +286,54 @@ export default function SkyViewScreen() {
     setIsViewDrifted(false);
   };
 
-  // 방위각(rad) → 방향 레이블 계산
-  const azimuthToCompass = (az: number): string => {
-    // azimuth 0 = 북, 증가 방향은 동쪽
-    const deg = ((az * 180) / Math.PI + 360) % 360;
-    if (deg < 22.5 || deg >= 337.5) return '↑ 북';
-    if (deg < 67.5)  return '↑ 북동';
-    if (deg < 112.5) return '→ 동';
-    if (deg < 157.5) return '↓ 남동';
-    if (deg < 202.5) return '↓ 남';
-    if (deg < 247.5) return '↓ 남서';
-    if (deg < 292.5) return '← 서';
-    return '↑ 북서';
-  };
-
-  // 드래그 제스처
+  // 드래그 제스처 — worklet으로 UI 스레드 실행, setState는 runOnJS로 JS 스레드로 전달
   const panGesture = Gesture.Pan()
     .onUpdate((e) => {
-      const newAz = initialRotRef.current.azimuth - e.translationX * 0.005;
+      const newAz = initAz.value - e.translationX * 0.005;
       const newAlt = Math.max(
         -Math.PI / 2,
-        Math.min(Math.PI / 2, initialRotRef.current.altitude + e.translationY * 0.003)
+        Math.min(Math.PI / 2, initAlt.value + e.translationY * 0.003)
       );
-      rotationRef.current = { azimuth: newAz, altitude: newAlt };
+      rotAz.value  = newAz;
+      rotAlt.value = newAlt;
 
-      // 15° = 0.2618 rad 벗어나면 버튼 표시
       const drifted =
         Math.abs(newAz % (2 * Math.PI)) > 0.2618 ||
         Math.abs(newAlt - 0.5) > 0.2618;
       runOnJS(setIsViewDrifted)(drifted);
-      runOnJS(setCompassLabel)(azimuthToCompass(newAz));
+
+      const deg = ((newAz * 180) / Math.PI + 360) % 360;
+      runOnJS(setCompassLabel)(
+        deg < 22.5 || deg >= 337.5 ? '↑ 북' :
+        deg < 67.5  ? '↑ 북동' :
+        deg < 112.5 ? '→ 동'   :
+        deg < 157.5 ? '↓ 남동' :
+        deg < 202.5 ? '↓ 남'   :
+        deg < 247.5 ? '↓ 남서' :
+        deg < 292.5 ? '← 서'   : '↑ 북서'
+      );
     })
     .onEnd(() => {
-      initialRotRef.current = { ...rotationRef.current };
+      initAz.value  = rotAz.value;
+      initAlt.value = rotAlt.value;
     });
 
-  // 핀치 제스처
-  const pinchGesture = Gesture.Pinch().onUpdate((e) => {
+  // 핀치 제스처 — runOnJS로 JS 스레드 camera 접근
+  const _updateCameraFov = (scale: number) => {
     const camera = cameraRef.current;
     if (!camera) return;
-    const newFov = Math.max(20, Math.min(120, fovRef.current / e.scale));
+    const newFov = Math.max(20, Math.min(120, fovRef.current / scale));
     camera.fov = newFov;
     camera.updateProjectionMatrix();
-  }).onEnd((e) => {
-    fovRef.current = Math.max(20, Math.min(120, fovRef.current / e.scale));
-  });
+  };
+
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((e) => {
+      runOnJS(_updateCameraFov)(e.scale);
+    })
+    .onEnd((e) => {
+      fovRef.current = Math.max(20, Math.min(120, fovRef.current / e.scale));
+    });
 
   const composed = Gesture.Exclusive(
     tapGesture,
@@ -331,8 +341,6 @@ export default function SkyViewScreen() {
   );
 
   useEffect(() => {
-    rotationRef.current = { azimuth: 0, altitude: 0.5 };
-    initialRotRef.current = { azimuth: 0, altitude: 0.5 };
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
