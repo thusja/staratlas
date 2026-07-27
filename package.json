@@ -24,5 +24,8 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-native": "^5.0.0",
     "prettier": "^3.9.0"
+  },
+  "dependencies": {
+    "react-native-reanimated": "^4.5.3"
   }
 }
