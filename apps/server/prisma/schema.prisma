@@ -49,6 +49,7 @@ model Constellation {
   userId     Int                 @map("user_id")
   name       String
   memo       String?
+  thumbnail  String?
   lat        Float
   lng        Float
   observedAt DateTime            @map("observed_at")
