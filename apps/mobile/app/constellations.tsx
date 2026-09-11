@@ -20,6 +20,7 @@ function formatDate(iso: string): string {
 export default function ConstellationsScreen() {
   const token = useAuthStore((s) => s.token);
   const user  = useAuthStore((s) => s.user);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
 
   const { data: constellations, isLoading, error } = useConstellations();
   const deleteConstellation = useDeleteConstellation();
@@ -51,7 +52,18 @@ export default function ConstellationsScreen() {
         </TouchableOpacity>
         <Text style={styles.title}>내 별자리</Text>
         {token ? (
-          <Text style={styles.userEmail}>{user?.email}</Text>
+          <View style={styles.authRow}>
+            <Text style={styles.userEmail}>{user?.email}</Text>
+            <TouchableOpacity
+              onPress={() => {
+                clearAuth().catch(() => {
+                  Alert.alert('오류', '로그아웃에 실패했습니다.');
+                });
+              }}
+            >
+              <Text style={styles.logoutLink}>로그아웃</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <TouchableOpacity onPress={() => router.push('/auth')}>
             <Text style={styles.loginLink}>로그인</Text>
@@ -153,6 +165,15 @@ const styles = StyleSheet.create({
   },
   userEmail: {
     color: '#3a5070',
+    fontSize: 12,
+  },
+  authRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  logoutLink: {
+    color: '#8ab4ff',
     fontSize: 12,
   },
   loginLink: {

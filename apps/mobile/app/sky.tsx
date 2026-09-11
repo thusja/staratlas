@@ -363,9 +363,11 @@ export default function SkyViewScreen() {
       </GestureDetector>
 
       {/* 상단 정보 바 */}
-      <SafeAreaView style={styles.topBar} pointerEvents="none">
+      <SafeAreaView style={styles.topBar} pointerEvents="box-none">
         <View style={styles.topLeft}>
-          <Text style={styles.menuIcon}>☰</Text>
+          <Pressable onPress={() => router.push('/constellations')} hitSlop={8}>
+            <Text style={styles.menuIcon}>☰</Text>
+          </Pressable>
           <Text style={styles.timeText}>{timeLabel}</Text>
         </View>
         <View style={styles.topRight}>

@@ -24,8 +24,8 @@
 
 | 패키지 | 버전 기준 | 이유 |
 |--------|----------|------|
-| `react-native` | Expo SDK 최신 | 크로스플랫폼 앱 기반 프레임워크 |
-| `expo` | SDK 52+ | 네이티브 모듈 관리 및 빌드 툴체인 제공 |
+| `react-native` | 0.74.5 (SDK 51) | 크로스플랫폼 앱 기반 프레임워크 |
+| `expo` | ~51.0.0 | 네이티브 모듈 관리 및 빌드 툴체인 제공 |
 | `expo-dev-client` | latest | Expo Go 대신 커스텀 개발 빌드 생성 — Android/iOS 각각 독립 빌드 가능 |
 | `eas-cli` | latest | `eas build --platform android/ios` 로 플랫폼별 빌드 분리 실행 |
 | `typescript` | 5.x | 타입 안전성 — 좌표 계산 및 API 응답 타입 오류를 빌드 시점에 잡음 |
