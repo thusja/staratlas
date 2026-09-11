@@ -8,6 +8,7 @@ import {
   Pressable,
 } from 'react-native';
 import { GLView } from 'expo-gl';
+import * as FileSystem from 'expo-file-system';
 import { Renderer } from 'expo-three';
 import * as THREE from 'three';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -31,6 +32,7 @@ export default function SkyViewScreen() {
   const addDraftStar        = useDraftConstellationStore((s) => s.addStar);
   const removeDraftStar     = useDraftConstellationStore((s) => s.removeStar);
   const clearDraft          = useDraftConstellationStore((s) => s.clear);
+  const setDraftThumbnail   = useDraftConstellationStore((s) => s.setThumbnail);
 
   const constellationLineRef = useRef<THREE.Line | null>(null);
 
@@ -276,7 +278,23 @@ export default function SkyViewScreen() {
     clearDraft();
   };
 
-  const goToSaveConstellation = () => {
+  const goToSaveConstellation = async () => {
+    let thumbnail: string | null = null;
+    if (glRef.current) {
+      try {
+        const snapshot = await GLView.takeSnapshotAsync(glRef.current, {
+          format: 'jpeg',
+        });
+        const base64 = await FileSystem.readAsStringAsync(snapshot.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        thumbnail = `data:image/jpeg;base64,${base64}`;
+      } catch {
+        thumbnail = null;
+      }
+    }
+
+    setDraftThumbnail(thumbnail);
     router.push('/save-constellation');
   };
 

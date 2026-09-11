@@ -11,10 +11,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useLoginMutation, useRegisterMutation } from '../hooks/useAuth';
 
 export default function AuthScreen() {
+  const { redirect } = useLocalSearchParams<{ redirect?: string }>();
   const [mode, setMode]           = useState<'login' | 'register'>('login');
   const [email, setEmail]         = useState('');
   const [password, setPassword]   = useState('');
@@ -24,6 +25,13 @@ export default function AuthScreen() {
   const register = useRegisterMutation();
 
   const isLoading = login.isPending || register.isPending;
+
+  const getRedirectTarget = () => {
+    if (typeof redirect === 'string' && redirect.startsWith('/')) {
+      return redirect;
+    }
+    return '/constellations';
+  };
 
   const handleSubmit = async () => {
     const trimmedEmail    = email.trim();
@@ -48,7 +56,7 @@ export default function AuthScreen() {
     mutation.mutate(
       { email: trimmedEmail, password: trimmedPassword },
       {
-        onSuccess: () => router.back(),
+        onSuccess: () => router.replace(getRedirectTarget()),
         onError:   (e) => Alert.alert('오류', e.message),
       },
     );

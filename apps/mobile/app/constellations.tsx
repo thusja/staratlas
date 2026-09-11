@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +7,8 @@ import {
   SafeAreaView,
   FlatList,
   Alert,
+  TextInput,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
@@ -18,12 +21,37 @@ function formatDate(iso: string): string {
 }
 
 export default function ConstellationsScreen() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortMode, setSortMode] = useState<'latest' | 'name'>('latest');
+
   const token = useAuthStore((s) => s.token);
-  const user  = useAuthStore((s) => s.user);
+  const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.clearAuth);
 
   const { data: constellations, isLoading, error } = useConstellations();
   const deleteConstellation = useDeleteConstellation();
+
+  const visibleConstellations = useMemo(() => {
+    const base = [...(constellations ?? [])];
+    const q = searchQuery.trim().toLowerCase();
+
+    const filtered = q
+      ? base.filter((item) => {
+          const name = item.name.toLowerCase();
+          const memo = (item.memo ?? '').toLowerCase();
+          return name.includes(q) || memo.includes(q);
+        })
+      : base;
+
+    filtered.sort((a, b) => {
+      if (sortMode === 'name') {
+        return a.name.localeCompare(b.name, 'ko');
+      }
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    return filtered;
+  }, [constellations, searchQuery, sortMode]);
 
   const handleDelete = (item: Constellation) => {
     Alert.alert(
@@ -45,7 +73,6 @@ export default function ConstellationsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* 헤더 */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.backText}>← 하늘로</Text>
@@ -65,76 +92,109 @@ export default function ConstellationsScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <TouchableOpacity onPress={() => router.push('/auth')}>
+          <TouchableOpacity onPress={() => router.push('/auth?redirect=%2Fconstellations')}>
             <Text style={styles.loginLink}>로그인</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* 비로그인 상태 */}
       {!token && (
         <View style={styles.emptyWrapper}>
           <Text style={styles.emptyIcon}>✦</Text>
-          <Text style={styles.emptyText}>로그인하면 별자리를 저장하고{'\n'}다시 볼 수 있어요</Text>
-          <TouchableOpacity style={styles.loginButton} onPress={() => router.push('/auth')}>
+          <Text style={styles.emptyText}>로그인하면 별자리를 저장하고{`\n`}다시 볼 수 있어요</Text>
+          <TouchableOpacity
+            style={styles.loginButton}
+            onPress={() => router.push('/auth?redirect=%2Fconstellations')}
+          >
             <Text style={styles.loginButtonText}>로그인 / 회원가입</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* 로그인 + 로딩 */}
       {token && isLoading && (
         <View style={styles.emptyWrapper}>
           <Text style={styles.emptyText}>불러오는 중...</Text>
         </View>
       )}
 
-      {/* 에러 */}
       {token && error && (
         <View style={styles.emptyWrapper}>
-          <Text style={styles.emptyText}>불러오기 실패</Text>
+          <Text style={styles.emptyText}>{error.message || '불러오기 실패'}</Text>
         </View>
       )}
 
-      {/* 목록 */}
       {token && !isLoading && !error && (
-        <FlatList
-          data={constellations ?? []}
-          keyExtractor={(item) => String(item.id)}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={
-            <View style={styles.emptyWrapper}>
-              <Text style={styles.emptyIcon}>·✦·</Text>
-              <Text style={styles.emptyText}>
-                아직 저장된 별자리가 없어요{'\n'}
-                하늘 뷰에서 별을 이어 만들어 보세요
-              </Text>
-            </View>
-          }
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() => router.push(`/constellation/${item.id}`)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.cardBody}>
-                <Text style={styles.cardName}>{item.name}</Text>
-                {item.memo && <Text style={styles.cardMemo} numberOfLines={1}>{item.memo}</Text>}
-                <View style={styles.cardMeta}>
-                  <Text style={styles.cardDate}>{formatDate(item.observedAt)}</Text>
-                  <Text style={styles.cardStarCount}>✦ {item.stars.length}개</Text>
-                </View>
-              </View>
+        <>
+          <View style={styles.filterBar}>
+            <TextInput
+              style={styles.searchInput}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="이름/메모 검색"
+              placeholderTextColor="#3a5070"
+            />
+            <View style={styles.sortTabs}>
               <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => handleDelete(item)}
-                hitSlop={8}
+                style={[styles.sortTab, sortMode === 'latest' && styles.sortTabActive]}
+                onPress={() => setSortMode('latest')}
               >
-                <Text style={styles.deleteText}>✕</Text>
+                <Text style={[styles.sortTabText, sortMode === 'latest' && styles.sortTabTextActive]}>
+                  최신순
+                </Text>
               </TouchableOpacity>
-            </TouchableOpacity>
-          )}
-        />
+              <TouchableOpacity
+                style={[styles.sortTab, sortMode === 'name' && styles.sortTabActive]}
+                onPress={() => setSortMode('name')}
+              >
+                <Text style={[styles.sortTabText, sortMode === 'name' && styles.sortTabTextActive]}>
+                  이름순
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <FlatList
+            data={visibleConstellations}
+            keyExtractor={(item) => String(item.id)}
+            contentContainerStyle={styles.list}
+            ListEmptyComponent={
+              <View style={styles.emptyWrapper}>
+                <Text style={styles.emptyIcon}>·✦·</Text>
+                <Text style={styles.emptyText}>
+                  {searchQuery.trim()
+                    ? '검색 결과가 없어요'
+                    : `아직 저장된 별자리가 없어요\n하늘 뷰에서 별을 이어 만들어 보세요`}
+                </Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.card}
+                onPress={() => router.push(`/constellation/${item.id}`)}
+                activeOpacity={0.8}
+              >
+                {item.thumbnail ? (
+                  <Image source={{ uri: item.thumbnail }} style={styles.cardThumb} />
+                ) : (
+                  <View style={styles.cardThumbPlaceholder}>
+                    <Text style={styles.cardThumbPlaceholderText}>NO PREVIEW</Text>
+                  </View>
+                )}
+                <View style={styles.cardBody}>
+                  <Text style={styles.cardName}>{item.name}</Text>
+                  {item.memo && <Text style={styles.cardMemo} numberOfLines={1}>{item.memo}</Text>}
+                  <View style={styles.cardMeta}>
+                    <Text style={styles.cardDate}>{formatDate(item.observedAt)}</Text>
+                    <Text style={styles.cardStarCount}>✦ {item.stars.length}개</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={styles.deleteButton} onPress={() => handleDelete(item)} hitSlop={8}>
+                  <Text style={styles.deleteText}>✕</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
+            )}
+          />
+        </>
       )}
     </SafeAreaView>
   );
@@ -163,14 +223,14 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     letterSpacing: 2,
   },
-  userEmail: {
-    color: '#3a5070',
-    fontSize: 12,
-  },
   authRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  userEmail: {
+    color: '#3a5070',
+    fontSize: 12,
   },
   logoutLink: {
     color: '#8ab4ff',
@@ -179,6 +239,44 @@ const styles = StyleSheet.create({
   loginLink: {
     color: '#8ab4ff',
     fontSize: 13,
+  },
+  filterBar: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    gap: 10,
+  },
+  searchInput: {
+    backgroundColor: '#0d1a28',
+    borderWidth: 1,
+    borderColor: '#1a3050',
+    borderRadius: 10,
+    color: '#c8d8f8',
+    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  sortTabs: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  sortTab: {
+    borderWidth: 1,
+    borderColor: '#1a3050',
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: '#0b1422',
+  },
+  sortTabActive: {
+    borderColor: '#2f66d8',
+    backgroundColor: '#142b57',
+  },
+  sortTabText: {
+    color: '#6a8090',
+    fontSize: 12,
+  },
+  sortTabTextActive: {
+    color: '#9cc0ff',
   },
   list: {
     padding: 16,
@@ -192,6 +290,29 @@ const styles = StyleSheet.create({
     borderColor: '#1a3050',
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+  },
+  cardThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1a3050',
+    backgroundColor: '#07101a',
+  },
+  cardThumbPlaceholder: {
+    width: 72,
+    height: 72,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1a3050',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#081322',
+  },
+  cardThumbPlaceholderText: {
+    color: '#395170',
+    fontSize: 9,
   },
   cardBody: {
     flex: 1,

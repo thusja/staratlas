@@ -10,6 +10,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useObserverStore } from '../store/observerStore';
@@ -26,6 +27,7 @@ export default function SaveConstellationScreen() {
   const timestamp = useObserverStore((s) => s.timestamp);
 
   const stars    = useDraftConstellationStore((s) => s.stars);
+  const thumbnail = useDraftConstellationStore((s) => s.thumbnail);
   const clearDraft = useDraftConstellationStore((s) => s.clear);
 
   const token = useAuthStore((s) => s.token);
@@ -49,6 +51,7 @@ export default function SaveConstellationScreen() {
       {
         name:       name.trim(),
         memo:       memo.trim() || undefined,
+        thumbnail:  thumbnail ?? undefined,
         lat,
         lng,
         observedAt: new Date(timestamp).toISOString(),
@@ -82,6 +85,7 @@ export default function SaveConstellationScreen() {
           {/* 선택된 별 목록 미리보기 */}
           <View style={styles.starPreview}>
             <Text style={styles.sectionLabel}>선택된 별 ({stars.length}개)</Text>
+            {thumbnail && <Image source={{ uri: thumbnail }} style={styles.thumbnailPreview} />}
             <View style={styles.starList}>
               {stars.map((s, i) => (
                 <View key={s.hipId} style={styles.starItem}>
@@ -120,7 +124,10 @@ export default function SaveConstellationScreen() {
 
             {/* 로그인 필요 안내 */}
             {!token && (
-              <TouchableOpacity style={styles.loginBanner} onPress={() => router.push('/auth')}>
+              <TouchableOpacity
+                style={styles.loginBanner}
+                onPress={() => router.push('/auth?redirect=%2Fsave-constellation')}
+              >
                 <Text style={styles.loginBannerText}>
                   ⚠ 저장하려면 로그인이 필요합니다. 탭하여 로그인
                 </Text>
@@ -187,6 +194,15 @@ const styles = StyleSheet.create({
   },
   starList: {
     gap: 8,
+  },
+  thumbnailPreview: {
+    width: '100%',
+    height: 140,
+    borderRadius: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#1a3050',
+    backgroundColor: '#07101a',
   },
   starItem: {
     flexDirection: 'row',

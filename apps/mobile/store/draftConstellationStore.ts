@@ -3,13 +3,16 @@ import type { StarPoint3D } from './types';
 
 type DraftConstellationState = {
   stars: StarPoint3D[];
+  thumbnail: string | null;
   addStar:    (star: StarPoint3D) => void;
   removeStar: (hipId: number)     => void;
+  setThumbnail: (thumbnail: string | null) => void;
   clear:      () => void;
 };
 
 export const useDraftConstellationStore = create<DraftConstellationState>((set) => ({
   stars: [],
+  thumbnail: null,
 
   addStar: (star) =>
     set((s) => {
@@ -20,5 +23,7 @@ export const useDraftConstellationStore = create<DraftConstellationState>((set) 
   removeStar: (hipId) =>
     set((s) => ({ stars: s.stars.filter((x) => x.hipId !== hipId) })),
 
-  clear: () => set({ stars: [] }),
+  setThumbnail: (thumbnail) => set({ thumbnail }),
+
+  clear: () => set({ stars: [], thumbnail: null }),
 }));

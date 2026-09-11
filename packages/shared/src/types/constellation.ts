@@ -8,6 +8,7 @@ export type Constellation = {
   userId: number;
   name: string;
   memo: string | null;
+  thumbnail: string | null;
   lat: number;
   lng: number;
   observedAt: string; // ISO 8601
@@ -18,10 +19,18 @@ export type Constellation = {
 export type CreateConstellationRequest = {
   name: string;
   memo?: string;
+  thumbnail?: string;
   lat: number;
   lng: number;
   observedAt: string; // ISO 8601
   stars: ConstellationStarItem[];
+};
+
+export type UpdateConstellationRequest = {
+  name?: string;
+  memo?: string | null;
+  thumbnail?: string | null;
+  stars?: ConstellationStarItem[];
 };
 
 export type ConstellationsResponse = {
